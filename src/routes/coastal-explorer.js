@@ -26,6 +26,11 @@ export const coastalExplorer = {
     // OpenFreeMap needs no API key and carries full detail at the zooms this story uses.
     styleUrl: import.meta.env.VITE_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty',
     routeColor: '#f4623a',
+    // The remaining route is deliberately muted rather than a lighter tint of the same
+    // orange: at a glance the two were reading as one line.
+    routeAheadColor: '#8b8079',
+    // A soft halo so the ridden line holds up over whatever the basemap puts underneath.
+    routeCasingColor: '#ffffff',
     terrain: {
       tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
       encoding: 'terrarium',

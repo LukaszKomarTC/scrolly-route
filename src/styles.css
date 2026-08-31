@@ -130,6 +130,13 @@ h2 { font-size: clamp(2.2rem, 5vw, 4.6rem); letter-spacing: -.04em; }
 .navigation-grid span { padding: 1.1rem; border: 1px solid rgba(0,0,0,.16); border-radius: .8rem; font-weight: 600; }
 .fineprint { font-size: .8rem; opacity: .65; }
 
+/* MapLibre centres the cooperative-gesture hint on the whole map, which the story panel
+   overlaps on desktop, leaving the message half hidden. Shift it into the part of the map
+   the reader can actually see. Matches .story__chapters' width. */
+@media (min-width: 761px) {
+  .maplibregl-cooperative-gesture-screen { padding-left: min(42rem, 46vw); }
+}
+
 @media (max-width: 760px) {
   .hero { min-height: 82vh; padding: 2rem 1.25rem 3rem; }
 

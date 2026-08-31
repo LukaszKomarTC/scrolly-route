@@ -13,6 +13,14 @@ const TRANSPARENT = 'rgba(0, 0, 0, 0)';
 // line-gradient stops must strictly ascend, so the revealed edge needs a minimum width.
 const REVEAL_EDGE = 0.0008;
 
+// A fixed ~1.4s move read as a teleport on the long hops while being needlessly slow
+// between neighbouring coves. Transitions are timed from how far the camera actually
+// travels, so a first-time visitor can follow the geography rather than arrive at it.
+const MIN_MOVE_MS = 2000;
+const MAX_MOVE_MS = 3800;
+// Beyond this the camera arcs out instead of sliding, which shows the ground in between.
+const ARC_ABOVE_KM = 2.5;
+
 const app = document.querySelector('#app');
 const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 let reduceMotion = motionQuery.matches;
@@ -106,7 +114,12 @@ const map = new maplibregl.Map({
   container: 'map',
   style: route.map.styleUrl,
   ...route.map.initialView,
-  attributionControl: true
+  attributionControl: true,
+  // The map is sticky and fills most of the viewport, so an unmodified wheel over it would
+  // zoom instead of advancing the story and leave the reader unable to scroll past it.
+  // Cooperative gestures pass a plain scroll through to the page and ask for Ctrl/Cmd to
+  // zoom, the same convention as an embedded Google map.
+  cooperativeGestures: true
 });
 
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
@@ -130,6 +143,8 @@ function addStoryMarkers() {
 }
 
 const routeColor = route.map.routeColor || DEFAULT_ROUTE_COLOR;
+const routeAheadColor = route.map.routeAheadColor || '#8b8079';
+const routeCasingColor = route.map.routeCasingColor || '#ffffff';
 
 // Each chapter knows its distance along the route, so the reveal can track the story
 // rather than raw scroll depth. Chapters without a distance fall back to even spacing.
@@ -147,15 +162,15 @@ if (chapterProgress.length && chapterProgress[chapterProgress.length - 1] >= 0.9
   chapterProgress[chapterProgress.length - 1] = 1;
 }
 
-function revealGradient(progress) {
+function revealGradient(progress, color) {
   if (progress >= 1) {
-    return ['interpolate', ['linear'], ['line-progress'], 0, routeColor, 1, routeColor];
+    return ['interpolate', ['linear'], ['line-progress'], 0, color, 1, color];
   }
   const edge = Math.min(Math.max(progress, REVEAL_EDGE), 1 - 2 * REVEAL_EDGE);
   return [
     'interpolate', ['linear'], ['line-progress'],
-    0, routeColor,
-    edge, routeColor,
+    0, color,
+    edge, color,
     edge + REVEAL_EDGE, TRANSPARENT,
     1, TRANSPARENT
   ];
@@ -165,7 +180,11 @@ let routeReady = false;
 
 function setRouteProgress(progress) {
   if (!routeReady) return;
-  map.setPaintProperty('master-route-progress', 'line-gradient', revealGradient(reduceMotion ? 1 : progress));
+  const revealed = reduceMotion ? 1 : progress;
+  // The casing is clipped to the same point as the line it sits under, so the halo never
+  // runs ahead of the ridden route.
+  map.setPaintProperty('master-route-casing', 'line-gradient', revealGradient(revealed, routeCasingColor));
+  map.setPaintProperty('master-route-progress', 'line-gradient', revealGradient(revealed, routeColor));
 }
 
 // The story panel covers the left of the map on desktop, so an unpadded camera drops the
@@ -190,11 +209,57 @@ function cameraPadding() {
 
 let mapVisible = true;
 
-function moveCamera(camera, duration) {
-  if (!camera || !mapVisible) return;
+// Slow at both ends, efficient through the middle: the departure and the arrival are the
+// moments a viewer needs to register where they are.
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function distanceKm([lng1, lat1], [lng2, lat2]) {
+  const toRadians = degrees => degrees * Math.PI / 180;
+  const deltaLat = toRadians(lat2 - lat1);
+  const deltaLng = toRadians(lng2 - lng1);
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(deltaLng / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(a));
+}
+
+function bearingDelta(from, to) {
+  return Math.abs(((to - from + 540) % 360) - 180);
+}
+
+// Distance dominates, but a hard turn or a big zoom change also costs orientation, so
+// both extend the move a little.
+function moveDuration(camera, km) {
+  const turn = bearingDelta(map.getBearing(), camera.bearing ?? map.getBearing());
+  const scale = Math.abs((camera.zoom ?? map.getZoom()) - map.getZoom());
+  const ms = MIN_MOVE_MS
+    + Math.min(km / 7, 1) * 1400
+    + Math.min(turn / 180, 1) * 500
+    + Math.min(scale / 3, 1) * 300;
+  return Math.round(Math.min(ms, MAX_MOVE_MS));
+}
+
+function moveCamera(camera, options = {}) {
+  if (!camera) return;
   const view = { ...camera, padding: cameraPadding() };
-  if (reduceMotion) map.jumpTo(view);
-  else map.easeTo({ ...view, duration });
+  // Only animation is worth suppressing off screen. An instant reframe costs nothing, and
+  // gating it broke reduced motion: that layout is not sticky, so by the later chapters the
+  // map has scrolled far above the viewport and never caught up with the story.
+  const instant = reduceMotion || options.duration === 0;
+  if (instant) {
+    map.jumpTo(view);
+    return;
+  }
+  if (!mapVisible) return;
+  const km = distanceKm(map.getCenter().toArray(), camera.center);
+  const duration = options.duration ?? moveDuration(camera, km);
+  if (km >= ARC_ABOVE_KM) {
+    // A gentle arc pulls back far enough to show the coastline between the two places.
+    map.flyTo({ ...view, duration, curve: 1.3, easing: easeInOutCubic });
+  } else {
+    map.easeTo({ ...view, duration, easing: easeInOutCubic });
+  }
 }
 
 // Terrain is what makes the per-chapter pitch mean anything. It is optional: if the DEM
@@ -244,9 +309,21 @@ async function addRoute() {
       source: 'master-route',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': routeColor,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 14, 4],
-        'line-opacity': 0.3
+        'line-color': routeAheadColor,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.5, 14, 3],
+        'line-opacity': 0.5
+      }
+    });
+    map.addLayer({
+      id: 'master-route-casing',
+      type: 'line',
+      source: 'master-route',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 14, 11],
+        'line-opacity': 0.55,
+        'line-blur': 0.5,
+        'line-gradient': revealGradient(reduceMotion ? 1 : 0, routeCasingColor)
       }
     });
     map.addLayer({
@@ -255,9 +332,9 @@ async function addRoute() {
       source: 'master-route',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 7],
-        'line-opacity': 0.95,
-        'line-gradient': revealGradient(reduceMotion ? 1 : 0)
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 14, 8],
+        'line-opacity': 1,
+        'line-gradient': revealGradient(reduceMotion ? 1 : 0, routeColor)
       }
     });
 
@@ -291,8 +368,8 @@ chapterElements.forEach((chapter, index) => {
     start: 'top 65%',
     end: 'bottom 35%',
     toggleClass: { targets: chapter, className: 'is-active' },
-    onEnter: () => moveCamera(route.chapters[index].camera, 1400),
-    onEnterBack: () => moveCamera(route.chapters[index].camera, 950)
+    onEnter: () => moveCamera(route.chapters[index].camera),
+    onEnterBack: () => moveCamera(route.chapters[index].camera)
   });
 
   // Draw the route forward as the reader moves between chapters, so the line arrives at
@@ -320,7 +397,7 @@ if (mapWrap && 'IntersectionObserver' in window) {
     mapVisible = entry.isIntersecting;
     if (!returned) return;
     const active = chapterElements.findIndex(chapter => chapter.classList.contains('is-active'));
-    if (active >= 0) moveCamera(route.chapters[active].camera, 0);
+    if (active >= 0) moveCamera(route.chapters[active].camera, { duration: 0 });
   }, { threshold: 0.05 }).observe(mapWrap);
 }
 
@@ -345,6 +422,6 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(() => {
     ScrollTrigger.refresh();
     const active = chapterElements.findIndex(chapter => chapter.classList.contains('is-active'));
-    if (active >= 0) moveCamera(route.chapters[active].camera, 0);
+    if (active >= 0) moveCamera(route.chapters[active].camera, { duration: 0 });
   }, 180);
 });
