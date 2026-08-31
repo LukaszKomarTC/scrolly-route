@@ -9,9 +9,13 @@ import { coastalExplorer as route } from './routes/coastal-explorer.js';
 gsap.registerPlugin(ScrollTrigger);
 
 const DEFAULT_ROUTE_COLOR = '#f4623a';
+const TRANSPARENT = 'rgba(0, 0, 0, 0)';
+// line-gradient stops must strictly ascend, so the revealed edge needs a minimum width.
+const REVEAL_EDGE = 0.0008;
 
 const app = document.querySelector('#app');
-const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+let reduceMotion = motionQuery.matches;
 
 const navItems = [
   ['Strava', route.navigation.strava],
@@ -125,23 +129,134 @@ function addStoryMarkers() {
   });
 }
 
+const routeColor = route.map.routeColor || DEFAULT_ROUTE_COLOR;
+
+// Each chapter knows its distance along the route, so the reveal can track the story
+// rather than raw scroll depth. Chapters without a distance fall back to even spacing.
+const totalKm = Number(route.stats.distanceKm);
+const chapterProgress = route.chapters.map((chapter, index) => {
+  if (Number.isFinite(chapter.routeKm) && totalKm > 0) {
+    return Math.min(Math.max(chapter.routeKm / totalKm, 0), 1);
+  }
+  return route.chapters.length > 1 ? index / (route.chapters.length - 1) : 1;
+});
+
+// The closing chapter completes the ride, so rounding between the declared distance and
+// the last chapter's marker must not leave a sliver of the loop undrawn at the finish.
+if (chapterProgress.length && chapterProgress[chapterProgress.length - 1] >= 0.99) {
+  chapterProgress[chapterProgress.length - 1] = 1;
+}
+
+function revealGradient(progress) {
+  if (progress >= 1) {
+    return ['interpolate', ['linear'], ['line-progress'], 0, routeColor, 1, routeColor];
+  }
+  const edge = Math.min(Math.max(progress, REVEAL_EDGE), 1 - 2 * REVEAL_EDGE);
+  return [
+    'interpolate', ['linear'], ['line-progress'],
+    0, routeColor,
+    edge, routeColor,
+    edge + REVEAL_EDGE, TRANSPARENT,
+    1, TRANSPARENT
+  ];
+}
+
+let routeReady = false;
+
+function setRouteProgress(progress) {
+  if (!routeReady) return;
+  map.setPaintProperty('master-route-progress', 'line-gradient', revealGradient(reduceMotion ? 1 : progress));
+}
+
+// The story panel covers the left of the map on desktop, so an unpadded camera drops the
+// focal point behind the text. Measured from the live element rather than duplicating the CSS.
+function cameraPadding() {
+  // An explicit zero on every side matters: an empty object leaves whatever padding is
+  // already on the transform, so a desktop-to-mobile resize would keep the old offset.
+  const none = { top: 0, right: 0, bottom: 0, left: 0 };
+  const panel = document.querySelector('.story__chapters');
+  if (!panel) return none;
+  const width = panel.getBoundingClientRect().width;
+  // Mobile stacks the panel over the full width, so a horizontal offset does not help.
+  if (width > window.innerWidth * 0.8) return none;
+  return { ...none, left: Math.round(width) };
+}
+
+function moveCamera(camera, duration) {
+  if (!camera) return;
+  const view = { ...camera, padding: cameraPadding() };
+  if (reduceMotion) map.jumpTo(view);
+  else map.easeTo({ ...view, duration });
+}
+
+// Terrain is what makes the per-chapter pitch mean anything. It is optional: if the DEM
+// is unreachable the story still works as a flat map.
+function addTerrain() {
+  const terrain = route.map.terrain;
+  if (!terrain?.tiles?.length) return;
+  try {
+    map.addSource('terrain-dem', {
+      type: 'raster-dem',
+      tiles: terrain.tiles,
+      encoding: terrain.encoding || 'terrarium',
+      tileSize: terrain.tileSize || 256,
+      maxzoom: terrain.maxzoom || 12,
+      attribution: terrain.attribution
+    });
+    map.setTerrain({ source: 'terrain-dem', exaggeration: terrain.exaggeration ?? 1 });
+  } catch (error) {
+    console.warn('Terrain unavailable; continuing without it.', error);
+  }
+  try {
+    map.setSky({
+      'sky-color': '#8fc3e8',
+      'horizon-color': '#e2ecf2',
+      'fog-color': '#e8eef1',
+      'sky-horizon-blend': 0.6,
+      'horizon-fog-blend': 0.5,
+      'fog-ground-blend': 0.4,
+      'atmosphere-blend': 0.7
+    });
+  } catch (error) {
+    console.warn('Sky unavailable; continuing without it.', error);
+  }
+}
+
 async function addRoute() {
   try {
     const geojson = await loadGpxAsGeoJson(route.masterRoute);
 
     map.addSource('master-route', { type: 'geojson', data: geojson, lineMetrics: true });
+
+    // A faint full-route layer keeps the whole shape readable while the bright layer
+    // reveals only the distance the reader has travelled.
     map.addLayer({
-      id: 'master-route-line',
+      id: 'master-route-base',
       type: 'line',
       source: 'master-route',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': route.map.routeColor || DEFAULT_ROUTE_COLOR,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 7],
-        'line-opacity': 0.92
+        'line-color': routeColor,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2, 14, 4],
+        'line-opacity': 0.3
       }
     });
+    map.addLayer({
+      id: 'master-route-progress',
+      type: 'line',
+      source: 'master-route',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 7],
+        'line-opacity': 0.95,
+        'line-gradient': revealGradient(reduceMotion ? 1 : 0)
+      }
+    });
+
+    addTerrain();
     addStoryMarkers();
+    routeReady = true;
+    ScrollTrigger.refresh();
     statusEl.textContent = `${route.title} master GPX loaded · ${route.stats.distanceKm} km`;
     statusEl.dataset.state = 'ready';
   } catch (error) {
@@ -160,23 +275,55 @@ map.on('error', (event) => {
 
 map.on('load', addRoute);
 
-if (!reduceMotion) {
-  document.querySelectorAll('.chapter').forEach((chapter, index) => {
-    ScrollTrigger.create({
-      trigger: chapter,
-      start: 'top 65%',
-      end: 'bottom 35%',
-      toggleClass: { targets: chapter, className: 'is-active' },
-      onEnter: () => {
-        const camera = route.chapters[index].camera;
-        if (camera) map.easeTo({ ...camera, duration: 1400 });
-      },
-      onEnterBack: () => {
-        const camera = route.chapters[index].camera;
-        if (camera) map.easeTo({ ...camera, duration: 950 });
-      }
-    });
+const chapterElements = [...document.querySelectorAll('.chapter')];
+
+chapterElements.forEach((chapter, index) => {
+  ScrollTrigger.create({
+    trigger: chapter,
+    start: 'top 65%',
+    end: 'bottom 35%',
+    toggleClass: { targets: chapter, className: 'is-active' },
+    onEnter: () => moveCamera(route.chapters[index].camera, 1400),
+    onEnterBack: () => moveCamera(route.chapters[index].camera, 950)
   });
-} else {
-  document.body.classList.add('reduced-motion');
+
+  // Draw the route forward as the reader moves between chapters, so the line arrives at
+  // each chapter having covered exactly that chapter's distance along the ride.
+  if (index === 0) return;
+  ScrollTrigger.create({
+    trigger: chapter,
+    start: 'top 85%',
+    end: 'top 45%',
+    scrub: true,
+    onUpdate: (self) => {
+      const from = chapterProgress[index - 1];
+      const to = chapterProgress[index];
+      setRouteProgress(from + (to - from) * self.progress);
+    }
+  });
+});
+
+function applyMotionPreference() {
+  document.body.classList.toggle('reduced-motion', reduceMotion);
+  setRouteProgress(reduceMotion ? 1 : 0);
+  ScrollTrigger.refresh();
 }
+
+motionQuery.addEventListener('change', (event) => {
+  reduceMotion = event.matches;
+  applyMotionPreference();
+});
+
+applyMotionPreference();
+
+// Camera padding is derived from the live panel width, so a breakpoint change has to
+// re-frame the current chapter rather than leave it offset for the old layout.
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    ScrollTrigger.refresh();
+    const active = chapterElements.findIndex(chapter => chapter.classList.contains('is-active'));
+    if (active >= 0) moveCamera(route.chapters[active].camera, 0);
+  }, 180);
+});

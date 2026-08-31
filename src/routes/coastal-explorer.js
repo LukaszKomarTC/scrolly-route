@@ -22,8 +22,18 @@ export const coastalExplorer = {
     bucketList: 'Ride it, explore it, and cross the Wild Coast off the bucket list.'
   },
   map: {
-    styleUrl: import.meta.env.VITE_MAP_STYLE_URL || 'https://demotiles.maplibre.org/style.json',
+    // demotiles caps out at zoom 6, so every chapter camera here rendered an empty map.
+    // OpenFreeMap needs no API key and carries full detail at the zooms this story uses.
+    styleUrl: import.meta.env.VITE_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty',
     routeColor: '#f4623a',
+    terrain: {
+      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      encoding: 'terrarium',
+      tileSize: 256,
+      maxzoom: 12,
+      exaggeration: 1.2,
+      attribution: '<a href="https://registry.opendata.aws/terrain-tiles/">Terrain Tiles</a>'
+    },
     initialView: { center: [2.982, 41.754], zoom: 10.8, pitch: 42, bearing: -18 }
   },
   chapters: [
