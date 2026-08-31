@@ -22,6 +22,25 @@ const MAX_MOVE_MS = 3800;
 const ARC_ABOVE_KM = 2.5;
 
 const app = document.querySelector('#app');
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[ch]);
+}
+
+// Photography is optional everywhere. A chapter with no image, or one whose file is not in
+// the repo yet, keeps the placeholder rather than rendering a broken frame.
+function mediaMarkup(image) {
+  if (!image?.src) return '<div class="chapter__media is-placeholder" aria-hidden="true"><span>Production photo pending</span></div>';
+  const src = new URL(image.src, document.baseURI).href;
+  return `<figure class="chapter__media">
+      <img src="${escapeHtml(src)}" alt="${escapeHtml(image.alt)}" loading="lazy" decoding="async"
+           onerror="this.closest('.chapter__media').classList.add('is-placeholder'); this.remove();" />
+      <span aria-hidden="true">Production photo pending</span>
+      ${image.credit ? `<figcaption>${escapeHtml(image.credit)}</figcaption>` : ''}
+    </figure>`;
+}
 const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 let reduceMotion = motionQuery.matches;
 
@@ -35,7 +54,7 @@ const navItems = [
 ];
 
 app.innerHTML = `
-  <header class="hero">
+  <header class="hero"${route.hero?.image?.src ? ` style="--hero-image:url(&quot;${escapeHtml(new URL(route.hero.image.src, document.baseURI).href)}&quot;)"` : ''}>
     <div class="hero__inner">
       <p class="kicker">Tossa Cycling · Route experience</p>
       <h1>${route.title}</h1>
@@ -62,7 +81,7 @@ app.innerHTML = `
     <div class="story__chapters">
       ${route.chapters.map((chapter, index) => `
         <article class="chapter" data-chapter="${index}" id="${chapter.id}">
-          <div class="chapter__media" aria-hidden="true"><span>Production photo pending</span></div>
+          ${mediaMarkup(chapter.image)}
           <div class="chapter__copy">
             <p class="kicker">${chapter.eyebrow}</p>
             <h2>${chapter.title}</h2>

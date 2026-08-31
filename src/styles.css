@@ -30,9 +30,12 @@ button, a { font: inherit; }
   display: grid;
   align-items: end;
   padding: clamp(2rem, 6vw, 6rem);
+  /* The gradients stay whether or not a photograph is set, so the headline always has
+     something dark to sit on; --hero-image simply slides underneath when one exists. */
   background:
-    linear-gradient(180deg, rgba(17,19,15,.08), rgba(17,19,15,.88)),
+    linear-gradient(180deg, rgba(17,19,15,.15), rgba(17,19,15,.88)),
     radial-gradient(circle at 70% 25%, rgba(255,255,255,.14), transparent 30%),
+    var(--hero-image, none) center / cover no-repeat,
     linear-gradient(135deg, #263328, #11130f 65%);
 }
 .hero__inner { max-width: 70rem; }
@@ -101,6 +104,8 @@ h2 { font-size: clamp(2.2rem, 5vw, 4.6rem); letter-spacing: -.04em; }
 }
 .chapter.is-active { opacity: 1; transform: none; }
 .chapter__media {
+  position: relative;
+  margin: 0;
   aspect-ratio: 16 / 10;
   border: 1px solid rgba(255,255,255,.13);
   border-radius: 1rem;
@@ -114,6 +119,31 @@ h2 { font-size: clamp(2.2rem, 5vw, 4.6rem); letter-spacing: -.04em; }
   font-size: .75rem;
   text-transform: uppercase;
   letter-spacing: .11em;
+}
+.chapter__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: inherit;
+}
+/* Only the placeholder needs the "photo pending" caption; a real photo hides it. */
+.chapter__media > span { display: none; }
+.chapter__media.is-placeholder > span { display: block; }
+/* A credit belongs to a photograph, not to the frame that stands in for a missing one. */
+.chapter__media.is-placeholder figcaption { display: none; }
+.chapter__media figcaption {
+  position: absolute;
+  right: .6rem;
+  bottom: .5rem;
+  padding: .2rem .5rem;
+  border-radius: .4rem;
+  background: rgba(17, 19, 15, .55);
+  backdrop-filter: blur(6px);
+  font-size: .62rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .8);
 }
 .chapter__copy {
   padding: clamp(1.2rem, 3vw, 2rem);
@@ -161,8 +191,12 @@ h2 { font-size: clamp(2.2rem, 5vw, 4.6rem); letter-spacing: -.04em; }
   }
   /* The status pill lives bottom-left, which the card now occupies. */
   .map-status { top: 1rem; bottom: auto; }
-  /* A 16:10 media block would push the copy up over the map it is meant to sit beside. */
-  .chapter__media { display: none; }
+  /* A full 16:10 block pushed the copy up over the map. A shallower crop keeps the
+     photography while leaving the map the room the mobile pass fought for, and the
+     placeholder stays hidden because an empty frame is not worth the height. */
+  .chapter__media { aspect-ratio: 16 / 7; margin-bottom: .6rem; }
+  .chapter__media.is-placeholder { display: none; }
+  .chapter__copy { max-height: 44vh; }
   .chapter__copy {
     background: rgba(17, 19, 15, .88);
     backdrop-filter: blur(18px);
