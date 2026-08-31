@@ -8,7 +8,7 @@ export const coastalExplorer = {
   masterRoute: {
     format: 'gpx',
     source: 'Tossa Cycling approved master GPX',
-    url: '/routes/coastal-explorer/coastal-explorer.gpx'
+    url: 'routes/coastal-explorer/coastal-explorer.gpx'
   },
   stats: {
     distanceKm: '63.6',
