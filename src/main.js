@@ -106,7 +106,12 @@ const map = new maplibregl.Map({
   container: 'map',
   style: route.map.styleUrl,
   ...route.map.initialView,
-  attributionControl: true
+  attributionControl: true,
+  // The map is sticky and fills most of the viewport, so an unmodified wheel over it would
+  // zoom instead of advancing the story and leave the reader unable to scroll past it.
+  // Cooperative gestures pass a plain scroll through to the page and ask for Ctrl/Cmd to
+  // zoom, the same convention as an embedded Google map.
+  cooperativeGestures: true
 });
 
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
