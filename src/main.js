@@ -8,6 +8,8 @@ import { coastalExplorer as route } from './routes/coastal-explorer.js';
 
 gsap.registerPlugin(ScrollTrigger);
 
+const DEFAULT_ROUTE_COLOR = '#f4623a';
+
 const app = document.querySelector('#app');
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -126,20 +128,21 @@ function addStoryMarkers() {
 async function addRoute() {
   try {
     const geojson = await loadGpxAsGeoJson(route.masterRoute);
-    if (!map.loaded()) await new Promise(resolve => map.once('load', resolve));
 
     map.addSource('master-route', { type: 'geojson', data: geojson, lineMetrics: true });
     map.addLayer({
       id: 'master-route-line',
       type: 'line',
       source: 'master-route',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
+        'line-color': route.map.routeColor || DEFAULT_ROUTE_COLOR,
         'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 7],
         'line-opacity': 0.92
       }
     });
     addStoryMarkers();
-    statusEl.textContent = 'Coastal Explorer master GPX loaded · 63.6 km';
+    statusEl.textContent = `${route.title} master GPX loaded · ${route.stats.distanceKm} km`;
     statusEl.dataset.state = 'ready';
   } catch (error) {
     console.warn(error);
@@ -147,6 +150,13 @@ async function addRoute() {
     statusEl.dataset.state = 'warning';
   }
 }
+
+map.on('error', (event) => {
+  console.warn(event?.error || event);
+  if (statusEl.dataset.state === 'ready' || map.isStyleLoaded()) return;
+  statusEl.textContent = 'The interactive map is unavailable. Route details and navigation links below still work.';
+  statusEl.dataset.state = 'warning';
+});
 
 map.on('load', addRoute);
 
