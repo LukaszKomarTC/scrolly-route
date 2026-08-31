@@ -177,13 +177,21 @@ function cameraPadding() {
   const panel = document.querySelector('.story__chapters');
   if (!panel) return none;
   const width = panel.getBoundingClientRect().width;
-  // Mobile stacks the panel over the full width, so a horizontal offset does not help.
-  if (width > window.innerWidth * 0.8) return none;
+  if (width > window.innerWidth * 0.8) {
+    // Mobile: the card floats over the lower part of the map, so lift the focal point
+    // above it rather than offsetting sideways.
+    const card = document.querySelector('.chapter.is-active .chapter__copy')
+      || document.querySelector('.chapter__copy');
+    const height = card ? card.getBoundingClientRect().height : 0;
+    return { ...none, bottom: Math.round(Math.min(height, window.innerHeight * 0.55)) };
+  }
   return { ...none, left: Math.round(width) };
 }
 
+let mapVisible = true;
+
 function moveCamera(camera, duration) {
-  if (!camera) return;
+  if (!camera || !mapVisible) return;
   const view = { ...camera, padding: cameraPadding() };
   if (reduceMotion) map.jumpTo(view);
   else map.easeTo({ ...view, duration });
@@ -302,6 +310,19 @@ chapterElements.forEach((chapter, index) => {
     }
   });
 });
+
+// Animating a map that is scrolled out of view is wasted work on mobile. Camera moves
+// pause while it is off screen, and the active chapter is re-framed when it returns.
+const mapWrap = document.querySelector('.story__map-wrap');
+if (mapWrap && 'IntersectionObserver' in window) {
+  new IntersectionObserver(([entry]) => {
+    const returned = entry.isIntersecting && !mapVisible;
+    mapVisible = entry.isIntersecting;
+    if (!returned) return;
+    const active = chapterElements.findIndex(chapter => chapter.classList.contains('is-active'));
+    if (active >= 0) moveCamera(route.chapters[active].camera, 0);
+  }, { threshold: 0.05 }).observe(mapWrap);
+}
 
 function applyMotionPreference() {
   document.body.classList.toggle('reduced-motion', reduceMotion);
