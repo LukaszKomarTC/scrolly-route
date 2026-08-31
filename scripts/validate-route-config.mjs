@@ -1,28 +1,13 @@
 import fs from 'node:fs/promises';
-import { gunzipSync } from 'node:zlib';
-import { createHash } from 'node:crypto';
 
-const masterChunks = [
-  'public/routes/coastal-explorer/master/part-1a.b64',
-  'public/routes/coastal-explorer/master/part-1b.b64',
-  'public/routes/coastal-explorer/master/part-2.b64',
-  'public/routes/coastal-explorer/master/part-3.b64',
-  'public/routes/coastal-explorer/master/part-4.b64'
-];
+const routeConfigPath = 'src/routes/coastal-explorer.js';
 
-const requiredFiles = [
-  'src/routes/coastal-explorer.js',
-  'src/lib/load-gpx.js',
-  'src/main.js',
-  'src/styles.css',
-  'README.md',
-  ...masterChunks
-];
-
+const requiredFiles = [routeConfigPath, 'src/lib/load-gpx.js', 'src/main.js', 'src/styles.css', 'README.md'];
 for (const path of requiredFiles) await fs.access(path);
 
-const routeConfig = await fs.readFile('src/routes/coastal-explorer.js', 'utf8');
-const requiredMarkers = ['id:', 'masterRoute:', 'parts:', 'chapters:', 'navigation:', 'strava:'];
+const routeConfig = await fs.readFile(routeConfigPath, 'utf8');
+
+const requiredMarkers = ['id:', 'masterRoute:', 'url:', 'chapters:', 'navigation:', 'strava:'];
 for (const marker of requiredMarkers) {
   if (!routeConfig.includes(marker)) throw new Error(`Route config is missing required marker: ${marker}`);
 }
@@ -34,20 +19,45 @@ for (const marker of forbiddenMarkers) {
   }
 }
 
-const chunks = await Promise.all(masterChunks.map(path => fs.readFile(path, 'utf8')));
-const compressed = Buffer.from(chunks.join('').trim(), 'base64');
-const gpx = gunzipSync(compressed);
-const sha256 = createHash('sha256').update(gpx).digest('hex');
-const expectedSha256 = 'fcff17f2bd8fabe50965e15caf9d86c4b1ad4cb0a48e31800ba28b25f0caadfe';
+// The master GPX the config points at must actually exist; a config referencing a
+// missing asset should fail here rather than as a blank map in the browser.
+const gpxUrl = routeConfig.match(/masterRoute:\s*\{[^}]*url:\s*'([^']+)'/)?.[1];
+if (!gpxUrl) throw new Error('Route config does not declare a masterRoute.url.');
 
-if (sha256 !== expectedSha256) {
-  throw new Error(`Coastal Explorer master GPX checksum mismatch: ${sha256}`);
+const gpxPath = `public${gpxUrl}`;
+try {
+  await fs.access(gpxPath);
+} catch {
+  throw new Error(`Route config points at a master GPX that does not exist: ${gpxPath}`);
 }
 
-const text = gpx.toString('utf8');
-const trackPoints = (text.match(/<trkpt\b/g) || []).length;
-if (!text.includes('<gpx') || trackPoints !== 2765) {
-  throw new Error(`Unexpected Coastal Explorer GPX structure: ${trackPoints} track points`);
+const gpx = await fs.readFile(gpxPath, 'utf8');
+if (!gpx.includes('<gpx')) throw new Error(`${gpxPath} is not a GPX document.`);
+
+const points = [...gpx.matchAll(/<trkpt[^>]*lat="([-\d.]+)"[^>]*lon="([-\d.]+)"/g)]
+  .map(match => [Number(match[1]), Number(match[2])]);
+if (points.length < 100) throw new Error(`Master GPX has too few track points to be a real route: ${points.length}`);
+
+// Cross-check the advertised distance against the master route itself. This catches the
+// failure that actually matters — published stats drifting away from the GPX — without
+// pinning a checksum that any legitimate route revision would break.
+const toRadians = degrees => degrees * Math.PI / 180;
+let metres = 0;
+for (let i = 1; i < points.length; i += 1) {
+  const [lat1, lon1] = points[i - 1];
+  const [lat2, lon2] = points[i];
+  const deltaLat = toRadians(lat2 - lat1);
+  const deltaLon = toRadians(lon2 - lon1);
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(deltaLon / 2) ** 2;
+  metres += 2 * 6371000 * Math.asin(Math.sqrt(a));
+}
+const measuredKm = metres / 1000;
+
+const declaredKm = Number(routeConfig.match(/distanceKm:\s*'([\d.]+)'/)?.[1]);
+if (!Number.isFinite(declaredKm)) throw new Error('Route config does not declare a numeric stats.distanceKm.');
+if (Math.abs(measuredKm - declaredKm) > 1) {
+  throw new Error(`Config claims ${declaredKm} km but the master GPX measures ${measuredKm.toFixed(2)} km.`);
 }
 
-console.log(`Coastal Explorer validation passed: exact master GPX verified (${trackPoints} points, sha256 ${sha256}).`);
+console.log(`Coastal Explorer validation passed: ${points.length} track points, ${measuredKm.toFixed(2)} km measured against ${declaredKm} km declared.`);

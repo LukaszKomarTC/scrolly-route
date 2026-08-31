@@ -8,13 +8,7 @@ export const coastalExplorer = {
   masterRoute: {
     format: 'gpx',
     source: 'Tossa Cycling approved master GPX',
-    storage: 'lossless gzip split into public base64 chunks for connector-safe GitHub storage',
-    parts: [
-      '/routes/coastal-explorer/master/part-1.b64',
-      '/routes/coastal-explorer/master/part-2.b64',
-      '/routes/coastal-explorer/master/part-3.b64',
-      '/routes/coastal-explorer/master/part-4.b64'
-    ]
+    url: '/routes/coastal-explorer/coastal-explorer.gpx'
   },
   stats: {
     distanceKm: '63.6',
@@ -29,6 +23,7 @@ export const coastalExplorer = {
   },
   map: {
     styleUrl: import.meta.env.VITE_MAP_STYLE_URL || 'https://demotiles.maplibre.org/style.json',
+    routeColor: '#f4623a',
     initialView: { center: [2.982, 41.754], zoom: 10.8, pitch: 42, bearing: -18 }
   },
   chapters: [
