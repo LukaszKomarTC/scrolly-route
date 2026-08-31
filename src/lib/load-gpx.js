@@ -1,11 +1,17 @@
 import { gpx } from '@tmcw/togeojson';
 
+function normalizeParts(parts) {
+  return parts.flatMap((url) => url.endsWith('/part-1.b64')
+    ? [url.replace('/part-1.b64', '/part-1a.b64'), url.replace('/part-1.b64', '/part-1b.b64')]
+    : [url]);
+}
+
 async function decodeChunkedGzip(parts) {
   if (!('DecompressionStream' in window)) {
     throw new Error('This browser cannot decode the compressed GPX asset.');
   }
 
-  const encoded = (await Promise.all(parts.map(async (url) => {
+  const encoded = (await Promise.all(normalizeParts(parts).map(async (url) => {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Unable to load GPX asset (${response.status}) from ${url}`);
     return (await response.text()).trim();
