@@ -1,8 +1,11 @@
 import { gpx } from '@tmcw/togeojson';
 
 export async function loadGpxText(source) {
-  const response = await fetch(source.url);
-  if (!response.ok) throw new Error(`Unable to load GPX (${response.status}) from ${source.url}`);
+  // Resolved against the document base rather than the domain root, so the route still
+  // loads when the app is served from a subpath.
+  const url = new URL(source.url, document.baseURI).href;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Unable to load GPX (${response.status}) from ${url}`);
   return response.text();
 }
 

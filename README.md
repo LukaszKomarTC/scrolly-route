@@ -42,6 +42,33 @@ The engine must remain generic. Tossa Cycling is the first real-world implementa
 
 No production credentials, private customer data, private route inventory, VPS details or private AI Growth code belong in this repository.
 
+## Previewing the prototype
+
+The cinematic behaviour has to be judged on a real connection: the basemap, terrain and
+web fonts are all external, and how the route reads against the map is the open question.
+
+**On your own machine** — fastest, and the network URL lets you open it on a phone on the
+same Wi-Fi, which is where the mobile layout matters:
+
+```bash
+npm install
+npm run dev -- --host
+```
+
+**As a hosted preview** — the `Preview` workflow publishes the built prototype to GitHub
+Pages. Run it from the Actions tab and choose any branch, or let it publish on push to
+`main`. It uses only the workflow's own token: no secrets, no external host, nothing
+pointed at production. One-time repository setup: **Settings → Pages → Source → GitHub
+Actions**.
+
+The published URL is `https://<owner>.github.io/<repo>/`. The app reads `VITE_BASE_PATH`
+so it works from a subpath as well as the domain root; route assets resolve against the
+document base rather than `/`, which is also what a later mount under an existing site
+will need.
+
+To try a different basemap without touching the code, copy `.env.example` to `.env` and
+set `VITE_MAP_STYLE_URL`.
+
 ## Project status
 
 Foundation/bootstrap in progress.

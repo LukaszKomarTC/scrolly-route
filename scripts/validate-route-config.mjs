@@ -24,7 +24,7 @@ for (const marker of forbiddenMarkers) {
 const gpxUrl = routeConfig.match(/masterRoute:\s*\{[^}]*url:\s*'([^']+)'/)?.[1];
 if (!gpxUrl) throw new Error('Route config does not declare a masterRoute.url.');
 
-const gpxPath = `public${gpxUrl}`;
+const gpxPath = `public/${gpxUrl.replace(/^\//, '')}`;
 try {
   await fs.access(gpxPath);
 } catch {

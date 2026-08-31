@@ -1,0 +1,56 @@
+name: Preview
+
+# Publishes the built prototype to GitHub Pages so the cinematic behaviour can be judged
+# on a real connection, including from a phone. Uses only the workflow's own token — no
+# secrets, no external host, no production infrastructure.
+#
+# Run it manually from the Actions tab and pick any branch, or let it publish on push to
+# main. One-time setup: Settings -> Pages -> Source -> GitHub Actions.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deployments race; queue instead of cancelling a publish midway.
+concurrency:
+  group: preview-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate route
+        run: npm run check
+      - name: Build
+        # A Pages project site is served from /<repo>/, so the app is built for that subpath.
+        run: npm run build
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@v4
