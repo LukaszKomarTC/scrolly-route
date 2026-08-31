@@ -31,10 +31,16 @@ button, a { font: inherit; }
   align-items: end;
   padding: clamp(2rem, 6vw, 6rem);
   /* The gradients stay whether or not a photograph is set, so the headline always has
-     something dark to sit on; --hero-image simply slides underneath when one exists. */
+     something dark to sit on; --hero-image simply slides underneath when one exists.
+     The scrim is darkest where text actually sits — the kicker at the top and the stats
+     and positioning block at the bottom — and lifts through the middle so the photograph
+     is still a photograph rather than a dark rectangle. */
   background:
-    linear-gradient(180deg, rgba(17,19,15,.15), rgba(17,19,15,.88)),
-    radial-gradient(circle at 70% 25%, rgba(255,255,255,.14), transparent 30%),
+    linear-gradient(180deg,
+      rgba(17,19,15,.62) 0%,
+      rgba(17,19,15,.30) 28%,
+      rgba(17,19,15,.52) 62%,
+      rgba(17,19,15,.94) 100%),
     var(--hero-image, none) center / cover no-repeat,
     linear-gradient(135deg, #263328, #11130f 65%);
 }
