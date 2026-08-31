@@ -110,9 +110,19 @@ if (downloadButton) {
   });
 }
 
+// ?style=<key> swaps the basemap on the live page so alternatives can be compared on the
+// same view without a rebuild. Unknown keys fall back to the configured default.
+function resolveStyleUrl() {
+  const requested = new URLSearchParams(window.location.search).get('style');
+  const chosen = route.map.styles?.[requested] || route.map.styleUrl;
+  return /^https?:/i.test(chosen) ? chosen : new URL(chosen, document.baseURI).href;
+}
+
+const activeStyle = new URLSearchParams(window.location.search).get('style');
+
 const map = new maplibregl.Map({
   container: 'map',
-  style: route.map.styleUrl,
+  style: resolveStyleUrl(),
   ...route.map.initialView,
   attributionControl: true,
   // The map is sticky and fills most of the viewport, so an unmodified wheel over it would
@@ -342,7 +352,8 @@ async function addRoute() {
     addStoryMarkers();
     routeReady = true;
     ScrollTrigger.refresh();
-    statusEl.textContent = `${route.title} master GPX loaded · ${route.stats.distanceKm} km`;
+    const styleNote = route.map.styles?.[activeStyle] ? ` · basemap: ${activeStyle}` : '';
+    statusEl.textContent = `${route.title} master GPX loaded · ${route.stats.distanceKm} km${styleNote}`;
     statusEl.dataset.state = 'ready';
   } catch (error) {
     console.warn(error);
@@ -350,6 +361,19 @@ async function addRoute() {
     statusEl.dataset.state = 'warning';
   }
 }
+
+// Self-hosting the style split the failure modes: our file can load perfectly while the
+// basemap tiles it points at are unreachable, and the error handler below deliberately
+// ignores errors once the style is up. Without this the page would sit claiming it is
+// still loading. If the map has not become usable in this window, say so instead. The
+// window is generous because a slow connection is not a failure, and the message is
+// self-correcting: if the map does arrive it overwrites this with the ready state.
+const READY_TIMEOUT_MS = 25000;
+setTimeout(() => {
+  if (routeReady || statusEl.dataset.state === 'ready') return;
+  statusEl.textContent = 'The interactive map is unavailable. Route details and navigation links below still work.';
+  statusEl.dataset.state = 'warning';
+}, READY_TIMEOUT_MS);
 
 map.on('error', (event) => {
   console.warn(event?.error || event);
