@@ -132,10 +132,40 @@ h2 { font-size: clamp(2.2rem, 5vw, 4.6rem); letter-spacing: -.04em; }
 
 @media (max-width: 760px) {
   .hero { min-height: 82vh; padding: 2rem 1.25rem 3rem; }
-  .story__map-wrap { height: 58vh; }
-  .story__chapters { margin-top: 0; width: 100%; padding: 2rem 1rem 5rem; background: #11130f; }
-  .chapter { min-height: auto; padding: 2rem 0 4rem; opacity: 1; transform: none; }
-  .chapter__copy { background: transparent; backdrop-filter: none; padding: .5rem .25rem; }
+
+  /* The story used to be an opaque stack that scrolled across the sticky map, so the
+     camera animated a map nobody could see. Instead the map holds the viewport and the
+     chapter card floats over its lower portion, keeping the map visible while reading. */
+  .story__map-wrap { height: 100vh; }
+  .story__chapters {
+    margin-top: -100vh;
+    width: 100%;
+    padding: 0 .9rem 20vh;
+    background: transparent;
+  }
+  .chapter {
+    min-height: 100vh;
+    align-content: end;
+    /* Clear the map's attribution strip: it is a licensing requirement, not decoration,
+       and the card would otherwise sit on top of it. */
+    padding: 0 0 calc(3vh + 1.5rem);
+    opacity: 1;
+    transform: none;
+  }
+  /* The status pill lives bottom-left, which the card now occupies. */
+  .map-status { top: 1rem; bottom: auto; }
+  /* A 16:10 media block would push the copy up over the map it is meant to sit beside. */
+  .chapter__media { display: none; }
+  .chapter__copy {
+    background: rgba(17, 19, 15, .88);
+    backdrop-filter: blur(18px);
+    padding: 1rem 1.05rem;
+    /* Only the longest chapter reaches this cap. Scroll deliberately chains to the page
+       at its end, so the card never traps a thumb on a scroll-driven story. */
+    max-height: 54vh;
+    overflow-y: auto;
+  }
+  .chapter__copy h2 { font-size: clamp(1.5rem, 7vw, 2.1rem); }
   .navigation-grid { grid-template-columns: 1fr 1fr; }
 }
 
