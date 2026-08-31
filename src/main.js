@@ -3,7 +3,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import './styles.css';
-import { loadGpxAsGeoJson } from './lib/load-gpx.js';
+import { downloadGpx, loadGpxAsGeoJson } from './lib/load-gpx.js';
 import { coastalExplorer as route } from './routes/coastal-explorer.js';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -54,11 +54,7 @@ app.innerHTML = `
             <h2>${chapter.title}</h2>
             <p>${chapter.body}</p>
             ${chapter.safety ? `<p class="safety-note"><strong>Safety:</strong> ${chapter.safety}</p>` : ''}
-            ${chapter.subpoints?.length ? `
-              <ul class="subpoints">
-                ${chapter.subpoints.map(point => `<li><strong>${point.name}</strong>${point.note ? ` — ${point.note}` : ''}</li>`).join('')}
-              </ul>
-            ` : ''}
+            ${chapter.subpoints?.length ? `<ul class="subpoints">${chapter.subpoints.map(point => `<li><strong>${point.name}</strong>${point.note ? ` — ${point.note}` : ''}</li>`).join('')}</ul>` : ''}
           </div>
         </article>
       `).join('')}
@@ -71,10 +67,11 @@ app.innerHTML = `
       <h2 id="practical-title">Navigate Coastal Explorer your way</h2>
       <p>One Tossa Cycling master route, distributed through the navigation ecosystem you already use. Strava and the master GPX are live in this first build; the remaining platform links stay visibly pending until their copies are verified against the same master.</p>
       <div class="navigation-grid" aria-label="Navigation options">
-        ${navItems.map(([name, url]) => url
-          ? `<a href="${url}" ${url.startsWith('http') ? 'target="_blank" rel="noopener noreferrer"' : ''}>${name}</a>`
-          : `<span class="is-pending">${name}<small>Coming after verification</small></span>`
-        ).join('')}
+        ${navItems.map(([name, url]) => {
+          if (url === 'download') return `<button type="button" id="download-gpx">${name}</button>`;
+          if (url) return `<a href="${url}" target="_blank" rel="noopener noreferrer">${name}</a>`;
+          return `<span class="is-pending">${name}<small>Coming after verification</small></span>`;
+        }).join('')}
       </div>
       <p class="fineprint">The uploaded Tossa Cycling GPX is the source of truth. Future Strava, Komoot, Ride with GPS, Wikiloc and road-safe Google Maps copies must stay synchronized with this version.</p>
     </div>
@@ -82,6 +79,23 @@ app.innerHTML = `
 `;
 
 const statusEl = document.querySelector('#map-status');
+const downloadButton = document.querySelector('#download-gpx');
+if (downloadButton) {
+  downloadButton.addEventListener('click', async () => {
+    downloadButton.disabled = true;
+    downloadButton.textContent = 'Preparing GPX…';
+    try {
+      await downloadGpx(route.masterRoute, 'Tossa-Cycling-Coastal-Explorer.gpx');
+      downloadButton.textContent = 'Download GPX';
+    } catch (error) {
+      console.warn(error);
+      downloadButton.textContent = 'GPX unavailable';
+    } finally {
+      downloadButton.disabled = false;
+    }
+  });
+}
+
 const map = new maplibregl.Map({
   container: 'map',
   style: route.map.styleUrl,
@@ -111,7 +125,7 @@ function addStoryMarkers() {
 
 async function addRoute() {
   try {
-    const geojson = await loadGpxAsGeoJson(route.masterRoute.url);
+    const geojson = await loadGpxAsGeoJson(route.masterRoute);
     if (!map.loaded()) await new Promise(resolve => map.once('load', resolve));
 
     map.addSource('master-route', { type: 'geojson', data: geojson, lineMetrics: true });
