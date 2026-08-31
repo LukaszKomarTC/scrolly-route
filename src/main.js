@@ -4,17 +4,26 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import './styles.css';
 import { loadGpxAsGeoJson } from './lib/load-gpx.js';
-import { tossaHighlights as route } from './routes/tossa-highlights.js';
+import { coastalExplorer as route } from './routes/coastal-explorer.js';
 
 gsap.registerPlugin(ScrollTrigger);
 
 const app = document.querySelector('#app');
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+const navItems = [
+  ['Strava', route.navigation.strava],
+  ['Komoot', route.navigation.komoot],
+  ['Ride with GPS', route.navigation.rideWithGps],
+  ['Wikiloc', route.navigation.wikiloc],
+  ['Google Maps', route.navigation.googleMaps],
+  ['Download GPX', route.navigation.gpx]
+];
+
 app.innerHTML = `
   <header class="hero">
     <div class="hero__inner">
-      <p class="kicker">Scrolly Route · Technical prototype</p>
+      <p class="kicker">Tossa Cycling · Route experience</p>
       <h1>${route.title}</h1>
       <p class="hero__subtitle">${route.subtitle}</p>
       <dl class="stats" aria-label="Route summary">
@@ -22,23 +31,34 @@ app.innerHTML = `
         <div><dt>Elevation</dt><dd>${route.stats.elevationM}</dd></div>
         <div><dt>Difficulty</dt><dd>${route.stats.difficulty}</dd></div>
       </dl>
-      <p class="prototype-note">Prototype content only. Geometry, chapter positions, photography and factual copy must be verified before publication.</p>
+      <div class="positioning">
+        <p class="kicker">${route.positioning.label}</p>
+        <p>${route.positioning.statement}</p>
+        <strong>${route.positioning.bucketList}</strong>
+      </div>
+      <p class="prototype-note">First cinematic build using the approved Coastal Explorer GPX and verified local story points. Photography and some operational details remain prototype placeholders.</p>
     </div>
   </header>
 
   <section id="route-story" class="story" aria-label="Cinematic route story">
     <div class="story__map-wrap">
-      <div id="map" class="story__map" role="img" aria-label="Interactive route map"></div>
-      <div id="map-status" class="map-status" aria-live="polite">Loading master route…</div>
+      <div id="map" class="story__map" role="img" aria-label="Interactive Coastal Explorer route map"></div>
+      <div id="map-status" class="map-status" aria-live="polite">Loading Coastal Explorer master route…</div>
     </div>
     <div class="story__chapters">
       ${route.chapters.map((chapter, index) => `
-        <article class="chapter" data-chapter="${index}">
-          <div class="chapter__media" aria-hidden="true"><span>Photo placeholder</span></div>
+        <article class="chapter" data-chapter="${index}" id="${chapter.id}">
+          <div class="chapter__media" aria-hidden="true"><span>Production photo pending</span></div>
           <div class="chapter__copy">
             <p class="kicker">${chapter.eyebrow}</p>
             <h2>${chapter.title}</h2>
             <p>${chapter.body}</p>
+            ${chapter.safety ? `<p class="safety-note"><strong>Safety:</strong> ${chapter.safety}</p>` : ''}
+            ${chapter.subpoints?.length ? `
+              <ul class="subpoints">
+                ${chapter.subpoints.map(point => `<li><strong>${point.name}</strong>${point.note ? ` — ${point.note}` : ''}</li>`).join('')}
+              </ul>
+            ` : ''}
           </div>
         </article>
       `).join('')}
@@ -47,13 +67,16 @@ app.innerHTML = `
 
   <section class="practical" aria-labelledby="practical-title">
     <div class="practical__inner">
-      <p class="kicker">After the story</p>
-      <h2 id="practical-title">Take this route with you</h2>
-      <p>The production page will expose the verified master route through the visitor's preferred navigation ecosystem.</p>
+      <p class="kicker">Take it with you</p>
+      <h2 id="practical-title">Navigate Coastal Explorer your way</h2>
+      <p>One Tossa Cycling master route, distributed through the navigation ecosystem you already use. Strava and the master GPX are live in this first build; the remaining platform links stay visibly pending until their copies are verified against the same master.</p>
       <div class="navigation-grid" aria-label="Navigation options">
-        <span>Strava</span><span>Komoot</span><span>Ride with GPS</span><span>Wikiloc</span><span>Google Maps*</span><span>GPX</span>
+        ${navItems.map(([name, url]) => url
+          ? `<a href="${url}" ${url.startsWith('http') ? 'target="_blank" rel="noopener noreferrer"' : ''}>${name}</a>`
+          : `<span class="is-pending">${name}<small>Coming after verification</small></span>`
+        ).join('')}
       </div>
-      <p class="fineprint">* Google Maps only where the road route has been manually verified against the Tossa Cycling master route.</p>
+      <p class="fineprint">The uploaded Tossa Cycling GPX is the source of truth. Future Strava, Komoot, Ride with GPS, Wikiloc and road-safe Google Maps copies must stay synchronized with this version.</p>
     </div>
   </section>
 `;
@@ -68,6 +91,24 @@ const map = new maplibregl.Map({
 
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
 
+function addStoryMarkers() {
+  route.chapters.forEach((chapter) => {
+    if (chapter.point) {
+      const el = document.createElement('div');
+      el.className = 'story-marker';
+      el.title = chapter.title;
+      new maplibregl.Marker({ element: el }).setLngLat(chapter.point).addTo(map);
+    }
+    chapter.subpoints?.forEach((subpoint) => {
+      if (!subpoint.point) return;
+      const el = document.createElement('div');
+      el.className = 'story-marker story-marker--minor';
+      el.title = subpoint.name;
+      new maplibregl.Marker({ element: el }).setLngLat(subpoint.point).addTo(map);
+    });
+  });
+}
+
 async function addRoute() {
   try {
     const geojson = await loadGpxAsGeoJson(route.masterRoute.url);
@@ -80,14 +121,15 @@ async function addRoute() {
       source: 'master-route',
       paint: {
         'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 7],
-        'line-opacity': 0.9
+        'line-opacity': 0.92
       }
     });
-    statusEl.textContent = 'Verified master route loaded.';
+    addStoryMarkers();
+    statusEl.textContent = 'Coastal Explorer master GPX loaded · 63.6 km';
     statusEl.dataset.state = 'ready';
   } catch (error) {
     console.warn(error);
-    statusEl.textContent = 'Master GPX not added yet — map interaction shell is running with no route geometry.';
+    statusEl.textContent = 'Unable to load the Coastal Explorer master GPX.';
     statusEl.dataset.state = 'warning';
   }
 }
@@ -103,11 +145,11 @@ if (!reduceMotion) {
       toggleClass: { targets: chapter, className: 'is-active' },
       onEnter: () => {
         const camera = route.chapters[index].camera;
-        if (camera) map.easeTo({ ...camera, duration: 1200 });
+        if (camera) map.easeTo({ ...camera, duration: 1400 });
       },
       onEnterBack: () => {
         const camera = route.chapters[index].camera;
-        if (camera) map.easeTo({ ...camera, duration: 900 });
+        if (camera) map.easeTo({ ...camera, duration: 950 });
       }
     });
   });
